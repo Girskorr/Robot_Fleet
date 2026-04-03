@@ -32,7 +32,7 @@ class Robot(models.Model):
     charging_station_id = fields.Many2one(
         'station',
         string='Assigned Charging Station',
-        domain="[('station_type', '=', 'charging')]",  # Zeigt nur Ladestationen an
+        domain="[('station_type', '=', 'charging')]",
     )
     battery_low_threshold = fields.Integer(
         string='Low Battery Threshold (%)',

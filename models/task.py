@@ -1,8 +1,3 @@
-# --------------------------------------------
-# task.py - robot_fleet.task model
-# --------------------------------------------
-
-
 from odoo import models, fields,api
 from odoo.exceptions import ValidationError
 from datetime import timedelta
@@ -12,7 +7,7 @@ import json
 import logging
 import requests
 _logger = logging.getLogger(__name__)
-
+from odoo.tools import config
 
 class Task(models.Model):
     _name = 'robot_fleet.task'
@@ -104,11 +99,10 @@ class Task(models.Model):
         res = super(Task,self).create(vals)
         if res.ref == 'New':
             res.ref = self.env['ir.sequence'].next_by_code('task_seq')
-            # NEU: Webhook nach erfolgreicher Erstellung senden
+
         try:
             self.send_task_to_middleware(res)
         except Exception as e:
-            # Fehler nur loggen, um die Odoo-Transaktion nicht abzubrechen
             _logger.error(f"Webhook-Aufruf für Task {res.ref} ist fehlgeschlagen (wird ignoriert): {e}")
         print(res.ref)
         return res
@@ -137,15 +131,18 @@ class Task(models.Model):
         Bereitet die Task-Daten vor und sendet sie per Webhook an die Middleware.
         """
         #MIDDLEWARE_WEBHOOK_URL = "https://webhook.site/7684436f-8832-41a0-bafb-6632308b8c5e"
-        MIDDLEWARE_WEBHOOK_URL = "http://localhost:5000/api/v1/webhooks/new_task"
 
-        if not MIDDLEWARE_WEBHOOK_URL:
+        mw_host = config.get('middleware_api_host')
+        mw_port = config.get('middleware_api_port')
+        _logger.info(f"mw_host: {mw_host}, mw_port: {mw_port}")
+
+        if not mw_host or not mw_port:
             _logger.warning(
-                f"Middleware-Webhook-URL ist nicht konfiguriert. Überspringe Sendung für Task {task_record.ref}.")
+                f"Middleware-Wexycvxcyvxcvxyvxcbhook-URL ist nicht konfiguriert. Überspringe Sendung für Task {task_record.ref}.")
             return
 
         try:
-            # Daten für die Middleware zusammenstellen (übersetzen)
+            # Daten für die Middleware zusammenstellen
             task_data = {
                     "id": task_record.id,
                     "name" : task_record.name,
@@ -175,32 +172,28 @@ class Task(models.Model):
                 }
 
             headers = {'Content-Type': 'application/json'}
-
+            url = f"http://{mw_host}:{mw_port}/api/v1/webhooks/new_task"
             # Senden des POST-Requests
-            _logger.info(f"Sende Task {task_record.ref} an Middleware: {MIDDLEWARE_WEBHOOK_URL}")
+            _logger.info(f"Sende Task {task_record.ref} an Middleware: {url}")
             response = requests.post(
-                MIDDLEWARE_WEBHOOK_URL,
-                data=json.dumps(task_data, default=str),  # default=str für Datetime-Objekte etc.
+                url,
+                data=json.dumps(task_data, default=str),
                 headers=headers,
                 timeout=10  # Timeout von 10 Sekunden
             )
 
-            # Fehler auslösen, wenn der HTTP-Status ein Fehler ist (z.B. 404, 500)
+            # Fehler auslösen, wenn der HTTP-Status ein Fehler
             response.raise_for_status()
 
 
             _logger.info(f"Task {task_record.ref} erfolgreich an Middleware gesendet. Status: {response.status_code}")
 
         except requests.exceptions.RequestException as e:
-            # Fehler beim Senden des Webhooks (z.B. Netzwerkfehler, Timeout, 500er-Fehler)
-            # Dieser Fehler wird abgefangen und protokolliert.
+
             _logger.error(f"Fehler beim Senden von Task {task_record.ref} an Middleware: {e}")
             _logger.info(response.data)
-            # WICHTIG: Wir lösen hier *keinen* Odoo-Fehler aus,
-            # damit das Erstellen des Tasks in Odoo nicht fehlschlägt,
-            # nur weil die Middleware nicht erreichbar ist.
         except Exception as e:
-            # Andere unerwartete Fehler abfangen
+
             _logger.error(f"Unerwarteter Fehler beim Senden des Webhook für Task {task_record.ref}: {e}")
 
     @api.constrains('robot_id', 'company_id')
